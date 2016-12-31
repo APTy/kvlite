@@ -12,6 +12,22 @@ use rustc_serialize::json;
 
 static DB_FILENAME: &'static str = "./db.kvlite";
 
+struct KVResult {
+    msg: String,
+}
+
+impl KVResult {
+    fn new(msg: String) -> KVResult {
+        KVResult {
+            msg: msg,
+        }
+    }
+
+    fn display(self) -> String {
+        self.msg
+    }
+}
+
 struct KVStore {
     kv: HashMap<String, String>,
     filename: &'static str,
@@ -25,53 +41,75 @@ impl KVStore {
         }
     }
 
-    fn set(&mut self, key: &String, value: &String) -> Option<String> {
-        self.kv.insert(key.clone(), value.clone())
+    fn set(&mut self, key: &String, value: &String) -> Result<KVResult, io::Error> {
+        self.load();
+        let res = match self.kv.insert(key.clone(), value.clone()) {
+            Some(_) => { KVResult::new(format!("UPDATE {}", key)) },
+            None => { KVResult::new(format!("CREATE {}", key)) },
+        };
+        match self.commit() {
+            Err(why) => { Result::Err(why) },
+            _ => { Result::Ok(res) },
+        }
     }
 
-    fn get(&self, key: &String) -> Option<&String> {
-        self.kv.get(key)
+    fn get(&mut self, key: &String) -> Result<KVResult, io::Error> {
+        self.load();
+        let res = match self.kv.get(key) {
+            Some(val) => { KVResult::new(format!("{}", val)) },
+            None => { KVResult::new(format!("NOT EXISTS {}", key)) },
+        };
+        Result::Ok(res)
     }
 
-    fn del(&mut self, key: &String) -> Option<String> {
-        self.kv.remove(key)
+    fn del(&mut self, key: &String) -> Result<KVResult, io::Error> {
+        self.load();
+        let res = match self.kv.remove(key) {
+            Some(val) => { KVResult::new(format!("DELETE {}", val)) },
+            None => { KVResult::new(format!("NOT EXISTS {}", key)) },
+        };
+        match self.commit() {
+            Err(why) => { Result::Err(why) },
+            _ => { Result::Ok(res) },
+        }
+    }
+
+    fn noop(self, cmd: &String) -> Result<KVResult, io::Error> {
+        Result::Ok(KVResult::new(format!("UNKNOWN {}", cmd)))
     }
 
     fn load(&mut self) {
         let path = Path::new(self.filename);
-    
         let mut file = match OpenOptions::new().read(true).write(true).create(true).open(&path) {
-            Err(why) => panic!("couldn't open {}: {}", path.display(), why.description()),
+            Err(why) => panic!("couldn't load {}: {:?}", path.display(), why),
             Ok(file) => file,
         };
     
         let mut s = String::new();
-        match file.read_to_string(&mut s) {
-            Err(why) => {
-                panic!("couldn't read {}: {}", path.display(), why.description());
-            },
-            Ok(_) => {
-                if s.len() == 0 {
-                    return;
-                }
-                let kv: HashMap<String, String> = match json::decode(&s) {
-                    Err(why) => panic!("couldn't parse: {}", why.description()),
-                    Ok(x) => x,
-                };
-                for (key, val) in &kv {
-                    self.set(key, val);
-                }
-            },
+        let fr = file.read_to_string(&mut s);
+        if fr.is_err() {
+            panic!("couldn't read {:?}: {:?}", path, fr);
+        }
+        if s.len() == 0 {
+            return;
+        }
+
+        let kv: HashMap<String, String> = match json::decode(&s) {
+            Err(why) => panic!("couldn't parse: {}", why.description()),
+            Ok(x) => x,
         };
+        for (key, val) in &kv {
+            self.kv.insert(key.clone(), val.clone());
+        }
     }
 
-    fn commit(self) -> Result<(), io::Error> {
+    fn commit(&self) -> Result<(), io::Error> {
         let d = json::encode(&self.kv).unwrap();
         let path = Path::new(self.filename);
         let display = path.display();
 
         let mut file = match OpenOptions::new().write(true).create(true).open(&path) {
-            Err(why) => panic!("couldn't open {}: {}", display, why.description()),
+            Err(why) => panic!("couldn't save {}: {}", display, why.description()),
             Ok(file) => file,
         };
 
@@ -83,7 +121,6 @@ impl KVStore {
         if fl.is_err() {
             return fw;
         }
-
         file.sync_data()
     }
 }
@@ -92,14 +129,13 @@ fn help() {
     println!("usage: kvlite <command> [<args>]\n");
     println!("kvlite is a key-value store backed by the local file system.\n");
     println!("commands:");
-    println!("  set <key> <value>        Create or update a key's value.");
-    println!("  get <key>                Look up a key's value.");
-    println!("  del <key>                Remove a key.");
+    println!("    set <key> <value>        Create or update a key's value.");
+    println!("    get <key>                Look up a key's value.");
+    println!("    del <key>                Remove a key.");
 }
 
 fn main() {
     let mut kv = KVStore::new(DB_FILENAME);
-    kv.load();
 
     let args: Vec<String> = args().collect();
     if args.len() == 1 {
@@ -107,59 +143,25 @@ fn main() {
         return;
     }
     let cmd = &args[1];
-    match cmd.as_str() {
+    let res = match cmd.as_str() {
         "set" => {
-            if args.len() < 4 {
-                help();
-                return;
-            }
-            let key = &args[2];
-            let val = &args[3];
-            match kv.set(key, val) {
-                Some(_) => {
-                    println!("UPDATE {}", key);
-                },
-                None => {
-                    println!("CREATE {}", key);
-                },
-            }
+            if args.len() < 4 { help(); return; }
+            kv.set(&args[2], &args[3])
         },
         "get" => {
-            if args.len() < 3 {
-                help();
-                return;
-            }
-            let key = &args[2];
-            match kv.get(key) {
-                Some(val) => {
-                    println!("{}", val);
-                },
-                None => {
-                    println!("NOT EXISTS {}", key);
-                },
-            }
+            if args.len() < 3 { help(); return; }
+            kv.get(&args[2])
         },
         "del" => {
-            if args.len() < 3 {
-                help();
-                return;
-            }
-            let key = &args[2];
-            match kv.del(key) {
-                Some(val) => {
-                    println!("DELETE {}", val);
-                },
-                None => {
-                    println!("NOT EXISTS {}", key);
-                },
-            }
+            if args.len() < 3 { help(); return; }
+            kv.del(&args[2])
         },
         _ => {
-            help();
-        }
-    }
-    match kv.commit() {
-        Err(why) => { println!("commit error: {}", why.description()) },
-        _ => {},
+            kv.noop(cmd)
+        },
     };
+    match res {
+        Ok(msg) => { println!("{}", msg.display()); },
+        Err(why) => { println!("{}", why.description()); },
+    }
 }
