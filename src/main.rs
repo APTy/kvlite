@@ -10,30 +10,36 @@ use std::error::Error;
 use std::collections::HashMap;
 use rustc_serialize::json;
 
+/// Default database file name.
 static DB_FILENAME: &'static str = "./db.kvlite";
 
+/// Returned by KVStore with a useful message.
 struct KVResult {
     msg: String,
 }
 
 impl KVResult {
+    /// Returns a new result with the given message.
     fn new(msg: String) -> KVResult {
         KVResult {
             msg: msg,
         }
     }
 
+    /// Returns a printable string.
     fn display(self) -> String {
         self.msg
     }
 }
 
+/// A key-value store backed by a local file.
 struct KVStore {
     kv: HashMap<String, String>,
     filename: &'static str,
 }
 
 impl KVStore {
+    /// Create a new store using the given file.
     fn new(filename: &'static str) -> KVStore {
         KVStore {
             kv: HashMap::new(),
@@ -41,6 +47,7 @@ impl KVStore {
         }
     }
 
+    /// Creates a key with a value or updates an already existing key's value.
     fn set(&mut self, key: &String, value: &String) -> Result<KVResult, io::Error> {
         self.load();
         let res = match self.kv.insert(key.clone(), value.clone()) {
@@ -53,6 +60,7 @@ impl KVStore {
         }
     }
 
+    /// Gets the current value of a key.
     fn get(&mut self, key: &String) -> Result<KVResult, io::Error> {
         self.load();
         let res = match self.kv.get(key) {
@@ -62,6 +70,7 @@ impl KVStore {
         Result::Ok(res)
     }
 
+    /// Removes a key and its value.
     fn del(&mut self, key: &String) -> Result<KVResult, io::Error> {
         self.load();
         let res = match self.kv.remove(key) {
@@ -74,10 +83,12 @@ impl KVStore {
         }
     }
 
+    /// No-op can be used to signify an unknown command.
     fn noop(self, cmd: &String) -> Result<KVResult, io::Error> {
         Result::Ok(KVResult::new(format!("UNKNOWN {}", cmd)))
     }
 
+    /// Reads the current database state into memory.
     fn load(&mut self) {
         let path = Path::new(self.filename);
         let mut file = match OpenOptions::new().read(true).write(true).create(true).open(&path) {
@@ -103,6 +114,7 @@ impl KVStore {
         }
     }
 
+    /// Saves the in-memory database state to file storage.
     fn commit(&self) -> Result<(), io::Error> {
         let d = json::encode(&self.kv).unwrap();
         let path = Path::new(self.filename);
