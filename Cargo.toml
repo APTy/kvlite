@@ -5,5 +5,13 @@ authors = ["Tyler Julian <tjulian@uber.com>"]
 description = "key value store backed by local files"
 license = "MIT"
 
+[lib]
+name = "kvlite"
+path = "src/lib.rs"
+
+[[bin]]
+name = "kvl"
+path = "src/main.rs"
+
 [dependencies]
 rustc-serialize = "0.3.22"
