@@ -7,7 +7,7 @@ use std::process::exit;
 use kvlite::store::Store;
 
 /// Default database file name.
-static DB_FILENAME: &'static str = "./db.kvlite";
+const DB_FILENAME: &'static str = "./db.kvlite";
 
 /// Prints CLI usage information.
 fn help() -> ! {
