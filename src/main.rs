@@ -34,36 +34,34 @@ impl KVResult {
 
 /// A key-value store backed by a local file.
 struct KVStore {
-    kv: HashMap<String, String>,
     filename: &'static str,
 }
 
 impl KVStore {
     /// Create a new store using the given file.
-    fn new(filename: &'static str) -> KVStore {
+    pub fn new(filename: &'static str) -> KVStore {
         KVStore {
-            kv: HashMap::new(),
             filename: filename,
         }
     }
 
     /// Creates a key with a value or updates an already existing key's value.
-    fn set(&mut self, key: &String, value: &String) -> Result<KVResult, io::Error> {
-        self.load();
-        let res = match self.kv.insert(key.clone(), value.clone()) {
+    pub fn set(&self, key: &String, value: &String) -> Result<KVResult, io::Error> {
+        let mut kv = self.load();
+        let res = match kv.insert(key.clone(), value.clone()) {
             Some(_) => { KVResult::new(format!("UPDATE {}", key)) },
             None => { KVResult::new(format!("CREATE {}", key)) },
         };
-        match self.commit() {
+        match self.commit(&kv) {
             Err(why) => { Result::Err(why) },
             _ => { Result::Ok(res) },
         }
     }
 
     /// Gets the current value of a key.
-    fn get(&mut self, key: &String) -> Result<KVResult, io::Error> {
-        self.load();
-        let res = match self.kv.get(key) {
+    pub fn get(&self, key: &String) -> Result<KVResult, io::Error> {
+        let kv = self.load();
+        let res = match kv.get(key) {
             Some(val) => { KVResult::new(format!("{}", val)) },
             None => { KVResult::new(format!("NOT EXISTS {}", key)) },
         };
@@ -71,13 +69,13 @@ impl KVStore {
     }
 
     /// Removes a key and its value.
-    fn del(&mut self, key: &String) -> Result<KVResult, io::Error> {
-        self.load();
-        let res = match self.kv.remove(key) {
+    pub fn del(&self, key: &String) -> Result<KVResult, io::Error> {
+        let mut kv = self.load();
+        let res = match kv.remove(key) {
             Some(val) => { KVResult::new(format!("DELETE {}", val)) },
             None => { KVResult::new(format!("NOT EXISTS {}", key)) },
         };
-        match self.commit() {
+        match self.commit(&kv) {
             Err(why) => { Result::Err(why) },
             _ => { Result::Ok(res) },
         }
@@ -89,7 +87,7 @@ impl KVStore {
     }
 
     /// Reads the current database state into memory.
-    fn load(&mut self) {
+    fn load(&self) -> HashMap<String, String> {
         let path = Path::new(self.filename);
         let mut file = match OpenOptions::new().read(true).write(true).create(true).open(&path) {
             Err(why) => panic!("couldn't load {}: {:?}", path.display(), why),
@@ -102,21 +100,19 @@ impl KVStore {
             panic!("couldn't read {:?}: {:?}", path, fr);
         }
         if s.len() == 0 {
-            return;
+            return HashMap::new();
         }
 
         let kv: HashMap<String, String> = match json::decode(&s) {
             Err(why) => panic!("couldn't parse: {}", why.description()),
             Ok(x) => x,
         };
-        for (key, val) in &kv {
-            self.kv.insert(key.clone(), val.clone());
-        }
+        kv
     }
 
     /// Saves the in-memory database state to file storage.
-    fn commit(&self) -> Result<(), io::Error> {
-        let d = json::encode(&self.kv).unwrap();
+    fn commit(&self, kv: &HashMap<String, String>) -> Result<(), io::Error> {
+        let d = json::encode(&kv).unwrap();
         let path = Path::new(self.filename);
         let display = path.display();
 
@@ -147,7 +143,7 @@ fn help() {
 }
 
 fn main() {
-    let mut kv = KVStore::new(DB_FILENAME);
+    let kv = KVStore::new(DB_FILENAME);
 
     let args: Vec<String> = args().collect();
     if args.len() == 1 {
