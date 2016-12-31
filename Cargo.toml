@@ -2,6 +2,8 @@
 name = "kvlite"
 version = "0.1.0"
 authors = ["Tyler Julian <tjulian@uber.com>"]
+description = "key value store backed by local files"
+license = "MIT"
 
 [dependencies]
 rustc-serialize = "0.3.22"
