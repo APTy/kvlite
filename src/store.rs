@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use self::rustc_serialize::json;
 
 /// Returned by Store with a useful message.
+#[derive(Debug)]
 pub struct KVResult {
     msg: String,
 }
@@ -126,4 +127,21 @@ impl Store {
         }
         file.sync_data()
     }
+}
+
+#[test]
+fn test_store() {
+    let kv = Store::new("/tmp/testfile.kvlite");
+    let foo = String::from("foo");
+    let bar = String::from("bar");
+
+    let s = kv.set(&foo, &bar);
+    assert!(s.is_ok());
+
+    let g = kv.get(&foo);
+    assert!(g.is_ok());
+    assert_eq!(g.unwrap().display(), bar);
+
+    let d = kv.del(&foo);
+    assert!(d.is_ok());
 }
