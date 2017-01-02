@@ -18,7 +18,7 @@ Next, add this to your crate:
 ```rust
 extern crate kvlite;
 
-use kvlite::Store;
+use kvlite::FileHashMap;
 ```
 
 See documentation for library usage.
@@ -31,7 +31,7 @@ With [rust](https://www.rustup.rs/) installed, you can use `cargo install kvlite
 ```
 usage: kvl <command> [<args>]
 
-kvlite is a key-value store backed by the local file system.
+kvl is a key-value store backed by the local file system.
 
 commands:
     set <key> <value>        Create or update a key's value.

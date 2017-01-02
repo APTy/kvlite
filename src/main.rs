@@ -12,7 +12,7 @@ const DB_FILENAME: &'static str = "./db.kvlite";
 /// Prints CLI usage information.
 fn help() -> ! {
     println!("usage: kvl <command> [<args>]\n");
-    println!("kvlite is a key-value store backed by the local file system.\n");
+    println!("kvl is a key-value store backed by the local file system.\n");
     println!("commands:");
     println!("    set <key> <value>        Create or update a key's value.");
     println!("    get <key>                Look up a key's value.");
