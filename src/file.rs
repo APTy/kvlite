@@ -139,11 +139,15 @@ impl Item {
         self.value
     }
 
-    pub fn with_next(&self, next: u32) -> Item {
+    pub fn with_next(&self, next: Option<u32>) -> Item {
+        let n = match next {
+            Some(n) => n,
+            None => 0,
+        };
         Item {
             key: self.key.clone(),
             value: self.value.clone(),
-            next: next,
+            next: n,
         }
     }
 }

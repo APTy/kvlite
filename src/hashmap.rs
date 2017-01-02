@@ -160,11 +160,7 @@ impl FileHashMap {
         if let Err(_) = file.seek(s) {
             return Err(Error::IO);
         }
-        let next = match prev_item.get_next() {
-            Some(x) => x,
-            None => 0,
-        };
-        let buf = new_item.with_next(next).as_bytes();
+        let buf = new_item.as_bytes();
         if let Err(_) = file.write(&buf) {
             return Err(Error::IO);
         }
@@ -201,24 +197,10 @@ impl FileHashMap {
             return Err(Error::IO);
         }
 
-        // read current contents and confirm nothing has changed
-        let prev_item_confirm = match self.read_item(&file, prev_pos) {
-            Err(why) => return Err(why),
-            Ok(x) => x,
-        };
-        if prev_item_confirm != *prev_item {
-            return Ok(false);
-        }
-
-        // update old item and write it
-        let old_s = FileHashMap::seek_from(prev_pos);
-        if let Err(_) = file.seek(old_s) {
-            return Err(Error::IO);
-        }
-        let update_prev_item = prev_item.with_next(new_pos);
-        let buf = update_prev_item.as_bytes();
-        if let Err(_) = file.write(&buf) {
-            return Err(Error::IO);
+        // update prev item
+        let update_prev_item = prev_item.with_next(Some(new_pos));
+        if let Err(why) = self.write_item_no_lock(file, prev_pos, prev_item, &update_prev_item) {
+            return Err(why);
         }
 
         // update header
@@ -271,7 +253,9 @@ impl FileHashMap {
 
             // update item if already exists
             if item.is_key(key) {
-                if let Ok(ok) = self.write_item(&file, pos, &item, &new_item) {
+                // preserve its "next" value
+                let merge_new_item = new_item.with_next(item.get_next());
+                if let Ok(ok) = self.write_item(&file, pos, &item, &merge_new_item) {
                     if !ok { continue; }
                 }
                 return Ok(());
@@ -310,7 +294,9 @@ impl FileHashMap {
                 Ok(x) => x,
             };
             if item.is_key(key) {
-                if let Ok(ok) = self.write_item(&file, pos, &item, &new_item) {
+                // preserve its "next" value
+                let merge_new_item = new_item.with_next(item.get_next());
+                if let Ok(ok) = self.write_item(&file, pos, &item, &merge_new_item) {
                     if !ok { continue; }
                 }
                 return Ok(());
@@ -380,4 +366,10 @@ fn test_filemap() {
     fm.remove("foo").unwrap();
     let val = fm.get("foo");
     assert_eq!(val.unwrap_err(), Error::NotFound); 
+
+    // make sure old keys are still there
+    let val = fm.get("uma");
+    assert_eq!(val.unwrap(), "duma");
+    let val = fm.get("doo");
+    assert_eq!(val.unwrap(), "dah");
 }
