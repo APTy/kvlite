@@ -28,9 +28,9 @@ impl FileHashMap {
     }
 
     fn hash(s: &str, key_count: u32) -> u64 {
-        let mut total: u32 = 0;
+        let mut total = 0;
         for b in s.as_bytes() {
-            total = *b as u32 + (total << 6) + (total << 16) - total;
+            total = (*b as u32).wrapping_add(total << 6).wrapping_add(total << 16).wrapping_sub(total);
         }
         (total % key_count) as u64
     }
