@@ -26,6 +26,8 @@ See documentation for library usage.
 
 ## CLI Usage
 
+With [rust](https://www.rustup.rs/) installed, you can use `cargo install kvlite` to get the `kvl` CLI tool.
+
 ```
 usage: kvl <command> [<args>]
 
