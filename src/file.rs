@@ -51,6 +51,7 @@ impl Header {
 
 /// Item is a linked-list node to store key-value pairs.
 #[derive(Debug)]
+#[derive(PartialEq)]
 pub struct Item {
     key: String,
     value: String,

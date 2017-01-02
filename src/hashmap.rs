@@ -1,8 +1,13 @@
+extern crate nix;
+
 use std::io::{Read, Write, Seek, SeekFrom};
+use std::os::unix::io::AsRawFd;
 use std::fs::{File, OpenOptions, remove_file};
 use std::path::Path;
 
 use file::{Header, Item, HEADER_SIZE, ITEM_SIZE};
+
+use self::nix::fcntl::{flock, FlockArg};
 
 const HEADER_POS: u64 = 0;
 const DEFAULT_KEY_COUNT: u32 = 256;
@@ -112,15 +117,33 @@ impl FileHashMap {
         }
     }
 
-    fn write_item(&self, mut file: &File, pos: u64, item: Item) {
+    fn write_item(&self, mut file: &File, pos: u64, prev_item: &Item, new_item: Item) {
+        // acquire an exclusive file lock
+        let fd = file.as_raw_fd();
+        flock(fd, FlockArg::LockExclusive).unwrap();
+
+        // read current contents and confirm nothing has changed
+        let prev_item_confirm = self.read_item(&file, pos);
+        if prev_item_confirm != *prev_item {
+            flock(fd, FlockArg::Unlock).unwrap();
+            return;
+        }
+
+        // write new contents
         let s = FileHashMap::seek_from(pos);
         file.seek(s);
-
-        let buf = item.as_bytes();
+        let buf = new_item.as_bytes();
         file.write(&buf);
+
+        // release lock
+        flock(fd, FlockArg::Unlock).unwrap();
     }
 
     fn write_new_item_to_heap(&self, mut file: &File, prev_pos: u64, mut prev_item: Item, new_item: Item) {
+        // acquire an exclusive file lock
+        let fd = file.as_raw_fd();
+        flock(fd, FlockArg::LockExclusive).unwrap();
+
         let mut header = self.read_header(&file);
 
         // calculate position of the new item and write it
@@ -129,6 +152,13 @@ impl FileHashMap {
         file.seek(new_s);
         let buf = new_item.as_bytes();
         file.write(&buf);
+
+        // read current contents and confirm nothing has changed
+        let prev_item_confirm = self.read_item(&file, prev_pos);
+        if prev_item_confirm != prev_item {
+            flock(fd, FlockArg::Unlock).unwrap();
+            return;
+        }
 
         // update old item and write it
         let old_s = FileHashMap::seek_from(prev_pos);
@@ -140,6 +170,9 @@ impl FileHashMap {
         // update header
         header.inc_heap();
         self.write_header(&file, header);
+
+        // release lock
+        flock(fd, FlockArg::Unlock).unwrap();
     }
 
     pub fn insert(&self, key: &str, val: &str) -> Option<String> {
@@ -154,13 +187,13 @@ impl FileHashMap {
 
             // write new item into static allocation
             if item.is_empty() {
-                self.write_item(&file, pos, new_item);
+                self.write_item(&file, pos, &item, new_item);
                 return Option::None;
             }
 
             // update item if already exists
             if item.is_key(key) {
-                self.write_item(&file, pos, new_item);
+                self.write_item(&file, pos, &item, new_item);
                 return Option::Some(item.get_val());
             }
 
@@ -189,13 +222,13 @@ impl FileHashMap {
 
             // write new item into static allocation
             if item.is_empty() {
-                self.write_item(&file, pos, new_item);
+                self.write_item(&file, pos, &item, new_item);
                 return Option::None;
             }
 
             // update item if already exists
             if item.is_key(key) {
-                self.write_item(&file, pos, new_item);
+                self.write_item(&file, pos, &item, new_item);
                 return Option::Some(item.get_key());
             }
 
