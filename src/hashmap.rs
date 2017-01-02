@@ -10,6 +10,11 @@ use nix::fcntl::{flock, FlockArg};
 const HEADER_POS: u64 = 0;
 const DEFAULT_KEY_COUNT: u32 = 256;
 
+struct FoundItem {
+    item: Item,
+    pos: u64,
+}
+
 /// FileHashMap is a HashMap backed by a file.
 pub struct FileHashMap {
     filename: &'static str,
@@ -120,11 +125,10 @@ impl FileHashMap {
         Ok(Item::from(buf))
     }
 
-    pub fn get(&self, key: &str) -> Result<String> {
+    fn find_item(&self, file: &File, key: &str) -> Result<FoundItem> {
         if let Err(why) = self.init_file_once(DEFAULT_KEY_COUNT) {
             return Err(why);
         };
-        let file = self.open_file();
         let header = match self.read_header(&file) {
             Ok(x) => x,
             Err(why) => return Err(why),
@@ -135,14 +139,48 @@ impl FileHashMap {
                 Err(why) => return Err(why),
                 Ok(x) => x,
             };
+
+            // return key if found
             if item.is_key(key) {
-                return Ok(item.get_val());
+                return Ok(FoundItem{
+                    item: item,
+                    pos: pos,
+                });
             }
+
+            // otherwise look for it in next item
             match item.get_next() {
                 Some(x) => pos = x as u64,
                 None    => return Err(Error::NotFound),
             }
         }
+    }
+
+    pub fn get(&self, key: &str) -> Result<String> {
+        let file = self.open_file();
+        match self.find_item(&file, key) {
+            Err(why) => Err(why),
+            Ok(f) => Ok(f.item.get_val()),
+        }
+    }
+
+    pub fn remove(&self, key: &str) -> Result<()> {
+        let file = self.open_file();
+        loop {
+            let found = match self.find_item(&file, key) {
+                Err(why) => return Err(why),
+                Ok(x) => x,
+            };
+            // overwrite with an empty item
+            let new_item = Item::empty();
+            // preserve its "next" value
+            let merge_new_item = new_item.with_next(found.item.get_next());
+            match self.write_item(&file, found.pos, &found.item, &merge_new_item) {
+                Err(why) => return Err(why),
+                Ok(ok) => if ok { break },
+            }
+        }
+        Ok(())
     }
 
     fn write_item_no_lock(&self, mut file: &File, pos: u64, prev_item: &Item, new_item: &Item) -> Result<bool> {
@@ -211,7 +249,6 @@ impl FileHashMap {
         return Ok(true);
     }
 
-
     fn write_new_item_to_heap(&self, file: &File, prev_pos: u64, prev_item: &Item, new_item: &Item) -> Result<bool> {
         // acquire an exclusive file lock
         let fd = file.as_raw_fd();
@@ -275,42 +312,7 @@ impl FileHashMap {
             }
         }
     }
-
-    pub fn remove(&self, key: &str) -> Result<()> {
-        if let Err(why) = self.init_file_once(DEFAULT_KEY_COUNT) {
-            return Err(why);
-        };
-        let file = self.open_file();
-        let header = match self.read_header(&file) {
-            Ok(x) => x,
-            Err(why) => return Err(why),
-        };
-        let mut pos = FileHashMap::hash(key, header.key_count);
-        let new_item = Item::empty();
-
-        loop {
-            let item = match self.read_item(&file, pos) {
-                Err(why) => return Err(why),
-                Ok(x) => x,
-            };
-            if item.is_key(key) {
-                // preserve its "next" value
-                let merge_new_item = new_item.with_next(item.get_next());
-                if let Ok(ok) = self.write_item(&file, pos, &item, &merge_new_item) {
-                    if !ok { continue; }
-                }
-                return Ok(());
-            }
-
-            // otherwise look for it in next item
-            match item.get_next() {
-                Some(x) => pos = x as u64,
-                None    => return Err(Error::NotFound),
-            }
-        }
-    }
 }
-
 
 
 #[test]
