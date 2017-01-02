@@ -7,12 +7,12 @@ use file::{Header, Item, HEADER_SIZE, ITEM_SIZE};
 const HEADER_POS: u64 = 0;
 
 /// FileHashMap is a HashMap backed by a file.
-struct FileHashMap {
+pub struct FileHashMap {
     filename: &'static str,
 }
 
 impl FileHashMap {
-    fn new(filename: &'static str) -> FileHashMap {
+    pub fn new(filename: &'static str) -> FileHashMap {
         FileHashMap {
             filename: filename,
         }
@@ -94,7 +94,7 @@ impl FileHashMap {
         Item::from(buf)
     }
 
-    fn get_key(&self, key: &str) -> Option<String> {
+    pub fn get(&self, key: &str) -> Option<String> {
         self.init_file_once();
         let file = self.open_file();
         let header = self.read_header(&file);
@@ -141,7 +141,7 @@ impl FileHashMap {
         self.write_header(&file, header);
     }
 
-    fn set_key(&self, key: &str, val: &str) {
+    pub fn insert(&self, key: &str, val: &str) -> Option<String> {
         self.init_file_once();
         let file = self.open_file();
         let header = self.read_header(&file);
@@ -154,23 +154,29 @@ impl FileHashMap {
             // write new item into static allocation
             if item.is_empty() {
                 self.write_item(&file, pos, new_item);
-                return;
+                return Option::None;
             }
 
             // update item if already exists
             if item.is_key(key) {
-                return self.write_item(&file, pos, new_item);
+                self.write_item(&file, pos, new_item);
+                return Option::Some(item.get_val());
             }
 
             // otherwise look for it in next item
             match item.get_next() {
-                Some(x) => pos = x as u64,
-                None    => return self.write_new_item_to_heap(&file, pos, item, new_item),
+                Some(x) => {
+                    pos = x as u64;
+                },
+                None => {
+                    self.write_new_item_to_heap(&file, pos, item, new_item);
+                    return Option::None;
+                },
             }
         }
     }
 
-    fn del_key(&self, key: &str) {
+    pub fn remove(&self, key: &str) -> Option<String> {
         self.init_file_once();
         let file = self.open_file();
         let header = self.read_header(&file);
@@ -183,18 +189,19 @@ impl FileHashMap {
             // write new item into static allocation
             if item.is_empty() {
                 self.write_item(&file, pos, new_item);
-                return;
+                return Option::None;
             }
 
             // update item if already exists
             if item.is_key(key) {
-                return self.write_item(&file, pos, new_item);
+                self.write_item(&file, pos, new_item);
+                return Option::Some(item.get_key());
             }
 
             // otherwise look for it in next item
             match item.get_next() {
                 Some(x) => pos = x as u64,
-                None    => return self.write_new_item_to_heap(&file, pos, item, new_item),
+                None    => return Option::None,
             }
         }
     }
@@ -220,43 +227,43 @@ fn test_filemap() {
     fm.delete_file();
 
     // get nonexistent key
-    let val = fm.get_key("foo");
+    let val = fm.get("foo");
     assert!(val.is_none());
 
     // create key
-    fm.set_key("foo", "bar");
-    let val = fm.get_key("foo");
+    fm.insert("foo", "bar");
+    let val = fm.get("foo");
     assert!(val.is_some());
     assert_eq!(val.unwrap(), "bar");
 
     // update key
-    fm.set_key("foo", "baz");
-    let val = fm.get_key("foo");
+    fm.insert("foo", "baz");
+    let val = fm.get("foo");
     assert!(val.is_some());
     assert_eq!(val.unwrap(), "baz");
 
     // add second key and check it
-    fm.set_key("doo", "dah");
-    let val = fm.get_key("doo");
+    fm.insert("doo", "dah");
+    let val = fm.get("doo");
     assert!(val.is_some());
     assert_eq!(val.unwrap(), "dah");
 
     // add third key and check it
-    fm.set_key("uma", "duma");
-    let val = fm.get_key("uma");
+    fm.insert("uma", "duma");
+    let val = fm.get("uma");
     assert!(val.is_some());
     assert_eq!(val.unwrap(), "duma");
 
     // make sure old keys are still there
-    let val = fm.get_key("foo");
+    let val = fm.get("foo");
     assert!(val.is_some());
     assert_eq!(val.unwrap(), "baz");
-    let val = fm.get_key("doo");
+    let val = fm.get("doo");
     assert!(val.is_some());
     assert_eq!(val.unwrap(), "dah");
 
     // delete a key and check it
-    fm.del_key("foo");
-    let val = fm.get_key("foo");
+    fm.remove("foo");
+    let val = fm.get("foo");
     assert!(val.is_none());
 }
