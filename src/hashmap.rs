@@ -5,6 +5,7 @@ use std::path::Path;
 use file::{Header, Item, HEADER_SIZE, ITEM_SIZE};
 
 const HEADER_POS: u64 = 0;
+const DEFAULT_KEY_COUNT: u32 = 256;
 
 /// FileHashMap is a HashMap backed by a file.
 pub struct FileHashMap {
@@ -26,11 +27,11 @@ impl FileHashMap {
         (total % key_count as u32) as u64
     }
 
-    fn init_file_once(&self) {
+    fn init_file_once(&self, key_count: u32) {
         let path = Path::new(self.filename);
         let header = Header {
             version: 0,
-            key_count: 1,
+            key_count: key_count,
             val_size: ITEM_SIZE,
             heap_size: 0,
         };
@@ -95,7 +96,7 @@ impl FileHashMap {
     }
 
     pub fn get(&self, key: &str) -> Option<String> {
-        self.init_file_once();
+        self.init_file_once(DEFAULT_KEY_COUNT);
         let file = self.open_file();
         let header = self.read_header(&file);
         let mut pos = FileHashMap::hash(key, header.key_count);
@@ -142,7 +143,7 @@ impl FileHashMap {
     }
 
     pub fn insert(&self, key: &str, val: &str) -> Option<String> {
-        self.init_file_once();
+        self.init_file_once(DEFAULT_KEY_COUNT);
         let file = self.open_file();
         let header = self.read_header(&file);
         let mut pos = FileHashMap::hash(key, header.key_count);
@@ -177,7 +178,7 @@ impl FileHashMap {
     }
 
     pub fn remove(&self, key: &str) -> Option<String> {
-        self.init_file_once();
+        self.init_file_once(DEFAULT_KEY_COUNT);
         let file = self.open_file();
         let header = self.read_header(&file);
         let mut pos = FileHashMap::hash(key, header.key_count);
@@ -223,8 +224,10 @@ fn test_hash() {
 
 #[test]
 fn test_filemap() {
+    // create a file hashmap with 1 bucket to ensure collisions
     let fm = FileHashMap::new("test.kvlite");
     fm.delete_file();
+    fm.init_file_once(1);
 
     // get nonexistent key
     let val = fm.get("foo");
