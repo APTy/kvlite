@@ -1,9 +1,11 @@
 [package]
 name = "kvlite"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Tyler Julian <tjulian@uber.com>"]
 description = "key value store backed by local files"
 license = "MIT"
+documentation = "https://docs.rs/kvlite"
+repository = "https://github.com/APTy/kvlite"
 
 [lib]
 name = "kvlite"
