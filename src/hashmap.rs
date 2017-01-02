@@ -145,25 +145,19 @@ impl FileHashMap {
         }
     }
 
-    fn write_item(&self, mut file: &File, pos: u64, prev_item: &Item, new_item: &Item) -> Result<bool> {
-        // acquire an exclusive file lock
-        let fd = file.as_raw_fd();
-        flock(fd, FlockArg::LockExclusive).unwrap();
-
+    fn write_item_no_lock(&self, mut file: &File, pos: u64, prev_item: &Item, new_item: &Item) -> Result<bool> {
         // read current contents and confirm nothing has changed
         let prev_item_confirm = match self.read_item(&file, pos) {
             Err(why) => return Err(why),
             Ok(x) => x,
         };
         if prev_item_confirm != *prev_item {
-            flock(fd, FlockArg::Unlock).unwrap();
             return Ok(false);
         }
 
         // write new contents
         let s = FileHashMap::seek_from(pos);
         if let Err(_) = file.seek(s) {
-            flock(fd, FlockArg::Unlock).unwrap();
             return Err(Error::IO);
         }
         let next = match prev_item.get_next() {
@@ -172,20 +166,25 @@ impl FileHashMap {
         };
         let buf = new_item.with_next(next).as_bytes();
         if let Err(_) = file.write(&buf) {
-            flock(fd, FlockArg::Unlock).unwrap();
             return Err(Error::IO);
         }
-
-        // release lock
-        flock(fd, FlockArg::Unlock).unwrap();
         return Ok(true);
     }
 
-    fn write_new_item_to_heap(&self, mut file: &File, prev_pos: u64, prev_item: &Item, new_item: &Item) -> Result<bool> {
+    fn write_item(&self, file: &File, pos: u64, prev_item: &Item, new_item: &Item) -> Result<bool> {
         // acquire an exclusive file lock
         let fd = file.as_raw_fd();
         flock(fd, FlockArg::LockExclusive).unwrap();
 
+        // write the item
+        let res = self.write_item_no_lock(file, pos, prev_item, new_item);
+
+        // release lock
+        flock(fd, FlockArg::Unlock).unwrap();
+        return res;
+    }
+
+    fn write_new_item_to_heap_no_lock(&self, mut file: &File, prev_pos: u64, prev_item: &Item, new_item: &Item) -> Result<bool> {
         let mut header = match self.read_header(&file) {
             Ok(x) => x,
             Err(why) => return Err(why),
@@ -195,12 +194,10 @@ impl FileHashMap {
         let new_pos = header.key_count + header.heap_size;
         let new_s = FileHashMap::seek_from(new_pos as u64);
         if let Err(_) = file.seek(new_s) {
-            flock(fd, FlockArg::Unlock).unwrap();
             return Err(Error::IO);
         }
         let buf = new_item.as_bytes();
         if let Err(_) = file.write(&buf) {
-            flock(fd, FlockArg::Unlock).unwrap();
             return Err(Error::IO);
         }
 
@@ -210,33 +207,40 @@ impl FileHashMap {
             Ok(x) => x,
         };
         if prev_item_confirm != *prev_item {
-            flock(fd, FlockArg::Unlock).unwrap();
             return Ok(false);
         }
 
         // update old item and write it
         let old_s = FileHashMap::seek_from(prev_pos);
         if let Err(_) = file.seek(old_s) {
-            flock(fd, FlockArg::Unlock).unwrap();
             return Err(Error::IO);
         }
         let update_prev_item = prev_item.with_next(new_pos);
         let buf = update_prev_item.as_bytes();
         if let Err(_) = file.write(&buf) {
-            flock(fd, FlockArg::Unlock).unwrap();
             return Err(Error::IO);
         }
 
         // update header
         header.inc_heap();
         if let Err(why) = self.write_header(&file, header) {
-            flock(fd, FlockArg::Unlock).unwrap();
             return Err(why);
         }
+        return Ok(true);
+    }
+
+
+    fn write_new_item_to_heap(&self, file: &File, prev_pos: u64, prev_item: &Item, new_item: &Item) -> Result<bool> {
+        // acquire an exclusive file lock
+        let fd = file.as_raw_fd();
+        flock(fd, FlockArg::LockExclusive).unwrap();
+
+        // write the item
+        let res = self.write_new_item_to_heap_no_lock(file, prev_pos, prev_item, new_item);
 
         // release lock
         flock(fd, FlockArg::Unlock).unwrap();
-        return Ok(true);
+        return res;
     }
 
     pub fn insert(&self, key: &str, val: &str) -> Result<()> {
