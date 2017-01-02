@@ -143,8 +143,12 @@ impl Item {
         self.value
     }
 
-    pub fn set_next(&mut self, next: u32) {
-        self.next = next;
+    pub fn with_next(&self, next: u32) -> Item {
+        Item {
+            key: self.key.clone(),
+            value: self.value.clone(),
+            next: next,
+        }
     }
 }
 

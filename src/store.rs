@@ -1,12 +1,10 @@
-extern crate rustc_serialize;
-
 use std::io;
 use std::io::prelude::*;
 use std::fs::OpenOptions;
 use std::path::Path;
 use std::error::Error;
 use std::collections::HashMap;
-use self::rustc_serialize::json;
+use rustc_serialize::json;
 
 use hashmap::FileHashMap;
 

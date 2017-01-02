@@ -1,13 +1,11 @@
-extern crate nix;
+use {Result};
+use file::{Header, Item, HEADER_SIZE, ITEM_SIZE};
 
 use std::io::{Read, Write, Seek, SeekFrom};
 use std::os::unix::io::AsRawFd;
 use std::fs::{File, OpenOptions, remove_file};
 use std::path::Path;
-
-use file::{Header, Item, HEADER_SIZE, ITEM_SIZE};
-
-use self::nix::fcntl::{flock, FlockArg};
+use nix::fcntl::{flock, FlockArg};
 
 const HEADER_POS: u64 = 0;
 const DEFAULT_KEY_COUNT: u32 = 256;
@@ -117,7 +115,7 @@ impl FileHashMap {
         }
     }
 
-    fn write_item(&self, mut file: &File, pos: u64, prev_item: &Item, new_item: Item) {
+    fn write_item(&self, mut file: &File, pos: u64, prev_item: &Item, new_item: &Item) -> Result<bool> {
         // acquire an exclusive file lock
         let fd = file.as_raw_fd();
         flock(fd, FlockArg::LockExclusive).unwrap();
@@ -126,7 +124,7 @@ impl FileHashMap {
         let prev_item_confirm = self.read_item(&file, pos);
         if prev_item_confirm != *prev_item {
             flock(fd, FlockArg::Unlock).unwrap();
-            return;
+            return Ok(false);
         }
 
         // write new contents
@@ -137,9 +135,10 @@ impl FileHashMap {
 
         // release lock
         flock(fd, FlockArg::Unlock).unwrap();
+        return Ok(true);
     }
 
-    fn write_new_item_to_heap(&self, mut file: &File, prev_pos: u64, mut prev_item: Item, new_item: Item) {
+    fn write_new_item_to_heap(&self, mut file: &File, prev_pos: u64, prev_item: &Item, new_item: &Item) -> Result<bool> {
         // acquire an exclusive file lock
         let fd = file.as_raw_fd();
         flock(fd, FlockArg::LockExclusive).unwrap();
@@ -155,16 +154,16 @@ impl FileHashMap {
 
         // read current contents and confirm nothing has changed
         let prev_item_confirm = self.read_item(&file, prev_pos);
-        if prev_item_confirm != prev_item {
+        if prev_item_confirm != *prev_item {
             flock(fd, FlockArg::Unlock).unwrap();
-            return;
+            return Ok(false);
         }
 
         // update old item and write it
         let old_s = FileHashMap::seek_from(prev_pos);
         file.seek(old_s);
-        prev_item.set_next(new_pos);
-        let buf = prev_item.as_bytes();
+        let update_prev_item = prev_item.with_next(new_pos);
+        let buf = update_prev_item.as_bytes();
         file.write(&buf);
 
         // update header
@@ -173,6 +172,7 @@ impl FileHashMap {
 
         // release lock
         flock(fd, FlockArg::Unlock).unwrap();
+        return Ok(true);
     }
 
     pub fn insert(&self, key: &str, val: &str) -> Option<String> {
@@ -187,13 +187,17 @@ impl FileHashMap {
 
             // write new item into static allocation
             if item.is_empty() {
-                self.write_item(&file, pos, &item, new_item);
+                if let Ok(ok) = self.write_item(&file, pos, &item, &new_item) {
+                    if !ok { continue; }
+                }
                 return Option::None;
             }
 
             // update item if already exists
             if item.is_key(key) {
-                self.write_item(&file, pos, &item, new_item);
+                if let Ok(ok) = self.write_item(&file, pos, &item, &new_item) {
+                    if !ok { continue; }
+                }
                 return Option::Some(item.get_val());
             }
 
@@ -203,7 +207,7 @@ impl FileHashMap {
                     pos = x as u64;
                 },
                 None => {
-                    self.write_new_item_to_heap(&file, pos, item, new_item);
+                    self.write_new_item_to_heap(&file, pos, &item, &new_item);
                     return Option::None;
                 },
             }
@@ -219,16 +223,10 @@ impl FileHashMap {
 
         loop {
             let item = self.read_item(&file, pos);
-
-            // write new item into static allocation
-            if item.is_empty() {
-                self.write_item(&file, pos, &item, new_item);
-                return Option::None;
-            }
-
-            // update item if already exists
             if item.is_key(key) {
-                self.write_item(&file, pos, &item, new_item);
+                if let Ok(ok) = self.write_item(&file, pos, &item, &new_item) {
+                    if !ok { continue; }
+                }
                 return Option::Some(item.get_key());
             }
 
