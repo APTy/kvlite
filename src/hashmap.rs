@@ -130,7 +130,11 @@ impl FileHashMap {
         // write new contents
         let s = FileHashMap::seek_from(pos);
         file.seek(s);
-        let buf = new_item.as_bytes();
+        let next = match prev_item.get_next() {
+            Some(x) => x,
+            None => 0,
+        };
+        let buf = new_item.with_next(next).as_bytes();
         file.write(&buf);
 
         // release lock
@@ -207,7 +211,9 @@ impl FileHashMap {
                     pos = x as u64;
                 },
                 None => {
-                    self.write_new_item_to_heap(&file, pos, &item, &new_item);
+                    if let Ok(ok) = self.write_new_item_to_heap(&file, pos, &item, &new_item) {
+                        if !ok { continue; }
+                    }
                     return Option::None;
                 },
             }
