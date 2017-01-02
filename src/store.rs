@@ -1,4 +1,5 @@
 use std::io;
+use std::error::Error;
 
 use hashmap::FileHashMap;
 
@@ -38,8 +39,8 @@ impl Store {
     /// Creates a key with a value or updates an already existing key's value.
     pub fn set(&self, key: &String, value: &String) -> Result<KVResult, io::Error> {
         let res = match self.kv.insert(key, value) {
-            Some(_) => { KVResult::new(format!("UPDATE {}", key)) },
-            None => { KVResult::new(format!("CREATE {}", key)) },
+            Ok(_) => { KVResult::new(format!("SET {}", key)) },
+            Err(why) => { KVResult::new(format!("ERR {}", why.description())) },
         };
         Result::Ok(res)
     }
@@ -47,8 +48,8 @@ impl Store {
     /// Gets the current value of a key.
     pub fn get(&self, key: &String) -> Result<KVResult, io::Error> {
         let res = match self.kv.get(key) {
-            Some(val) => { KVResult::new(format!("{}", val)) },
-            None => { KVResult::new(format!("NOT EXISTS {}", key)) },
+            Ok(val) => { KVResult::new(format!("{}", val)) },
+            Err(why) => { KVResult::new(format!("ERR {}", why.description())) },
         };
         Result::Ok(res)
     }
@@ -56,8 +57,8 @@ impl Store {
     /// Removes a key and its value.
     pub fn del(&self, key: &String) -> Result<KVResult, io::Error> {
         let res = match self.kv.remove(key) {
-            Some(val) => { KVResult::new(format!("DELETE {}", val)) },
-            None => { KVResult::new(format!("NOT EXISTS {}", key)) },
+            Ok(_) => { KVResult::new(format!("DELETE {}", key)) },
+            Err(why) => { KVResult::new(format!("ERR {}", why.description())) },
         };
         Result::Ok(res)
     }

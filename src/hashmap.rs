@@ -1,4 +1,4 @@
-use {Result};
+use {Result, Error};
 use file::{Header, Item, HEADER_SIZE, ITEM_SIZE};
 
 use std::io::{Read, Write, Seek, SeekFrom};
@@ -71,14 +71,18 @@ impl FileHashMap {
         }
     }
 
-    fn read_header(&self, mut file: &File) -> Header {
+    fn read_header(&self, mut file: &File) -> Result<Header> {
         let hdr_s = SeekFrom::Start(HEADER_POS);
-        file.seek(hdr_s);
+        if let Err(_) = file.seek(hdr_s) {
+            return Err(Error::IO);
+        }
 
         let mut buf = [0u8; HEADER_SIZE];
-        file.read(&mut buf);
+        if let Err(_) = file.read(&mut buf) {
+            return Err(Error::IO);
+        }
 
-        Header::from(buf)
+        Ok(Header::from(buf))
     }
 
     fn write_header(&self, mut file: &File, header: Header) {
@@ -99,19 +103,22 @@ impl FileHashMap {
         Item::from(buf)
     }
 
-    pub fn get(&self, key: &str) -> Option<String> {
+    pub fn get(&self, key: &str) -> Result<String> {
         self.init_file_once(DEFAULT_KEY_COUNT);
         let file = self.open_file();
-        let header = self.read_header(&file);
+        let header = match self.read_header(&file) {
+            Ok(x) => x,
+            Err(why) => return Err(why),
+        };
         let mut pos = FileHashMap::hash(key, header.key_count);
         loop {
             let item = self.read_item(&file, pos);
             if item.is_key(key) {
-                return Option::Some(item.get_val());
+                return Ok(item.get_val());
             }
             match item.get_next() {
                 Some(x) => pos = x as u64,
-                None    => return Option::None,
+                None    => return Err(Error::NotFound),
             }
         }
     }
@@ -148,7 +155,10 @@ impl FileHashMap {
         let fd = file.as_raw_fd();
         flock(fd, FlockArg::LockExclusive).unwrap();
 
-        let mut header = self.read_header(&file);
+        let mut header = match self.read_header(&file) {
+            Ok(x) => x,
+            Err(why) => return Err(why),
+        };
 
         // calculate position of the new item and write it
         let new_pos = header.key_count + header.heap_size;
@@ -180,10 +190,13 @@ impl FileHashMap {
         return Ok(true);
     }
 
-    pub fn insert(&self, key: &str, val: &str) -> Option<String> {
+    pub fn insert(&self, key: &str, val: &str) -> Result<()> {
         self.init_file_once(DEFAULT_KEY_COUNT);
         let file = self.open_file();
-        let header = self.read_header(&file);
+        let header = match self.read_header(&file) {
+            Ok(x) => x,
+            Err(why) => return Err(why),
+        };
         let mut pos = FileHashMap::hash(key, header.key_count);
         let new_item = Item::new(key, val);
 
@@ -195,7 +208,7 @@ impl FileHashMap {
                 if let Ok(ok) = self.write_item(&file, pos, &item, &new_item) {
                     if !ok { continue; }
                 }
-                return Option::None;
+                return Ok(());
             }
 
             // update item if already exists
@@ -203,7 +216,7 @@ impl FileHashMap {
                 if let Ok(ok) = self.write_item(&file, pos, &item, &new_item) {
                     if !ok { continue; }
                 }
-                return Option::Some(item.get_val());
+                return Ok(());
             }
 
             // otherwise look for it in next item
@@ -215,16 +228,19 @@ impl FileHashMap {
                     if let Ok(ok) = self.write_new_item_to_heap(&file, pos, &item, &new_item) {
                         if !ok { continue; }
                     }
-                    return Option::None;
+                    return Ok(());
                 },
             }
         }
     }
 
-    pub fn remove(&self, key: &str) -> Option<String> {
+    pub fn remove(&self, key: &str) -> Result<()> {
         self.init_file_once(DEFAULT_KEY_COUNT);
         let file = self.open_file();
-        let header = self.read_header(&file);
+        let header = match self.read_header(&file) {
+            Ok(x) => x,
+            Err(why) => return Err(why),
+        };
         let mut pos = FileHashMap::hash(key, header.key_count);
         let new_item = Item::empty();
 
@@ -234,13 +250,13 @@ impl FileHashMap {
                 if let Ok(ok) = self.write_item(&file, pos, &item, &new_item) {
                     if !ok { continue; }
                 }
-                return Option::Some(item.get_key());
+                return Ok(());
             }
 
             // otherwise look for it in next item
             match item.get_next() {
                 Some(x) => pos = x as u64,
-                None    => return Option::None,
+                None    => return Err(Error::NotFound),
             }
         }
     }
@@ -269,42 +285,36 @@ fn test_filemap() {
 
     // get nonexistent key
     let val = fm.get("foo");
-    assert!(val.is_none());
+    assert_eq!(val.unwrap_err(), Error::NotFound); 
 
     // create key
-    fm.insert("foo", "bar");
+    fm.insert("foo", "bar").unwrap();
     let val = fm.get("foo");
-    assert!(val.is_some());
     assert_eq!(val.unwrap(), "bar");
 
     // update key
-    fm.insert("foo", "baz");
+    fm.insert("foo", "baz").unwrap();
     let val = fm.get("foo");
-    assert!(val.is_some());
     assert_eq!(val.unwrap(), "baz");
 
     // add second key and check it
-    fm.insert("doo", "dah");
+    fm.insert("doo", "dah").unwrap();
     let val = fm.get("doo");
-    assert!(val.is_some());
     assert_eq!(val.unwrap(), "dah");
 
     // add third key and check it
-    fm.insert("uma", "duma");
+    fm.insert("uma", "duma").unwrap();
     let val = fm.get("uma");
-    assert!(val.is_some());
     assert_eq!(val.unwrap(), "duma");
 
     // make sure old keys are still there
     let val = fm.get("foo");
-    assert!(val.is_some());
     assert_eq!(val.unwrap(), "baz");
     let val = fm.get("doo");
-    assert!(val.is_some());
     assert_eq!(val.unwrap(), "dah");
 
     // delete a key and check it
-    fm.remove("foo");
+    fm.remove("foo").unwrap();
     let val = fm.get("foo");
-    assert!(val.is_none());
+    assert_eq!(val.unwrap_err(), Error::NotFound); 
 }

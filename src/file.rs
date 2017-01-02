@@ -135,10 +135,6 @@ impl Item {
         self.key == key
     }
 
-    pub fn get_key(self) -> String {
-        self.key
-    }
-
     pub fn get_val(self) -> String {
         self.value
     }
