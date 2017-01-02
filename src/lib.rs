@@ -1,13 +1,13 @@
 extern crate nix;
 
-pub mod store;
-
-mod hashmap;
+pub mod hashmap;
 mod file;
 
 use std::fmt;
 use std::error;
 use std::result;
+
+pub use hashmap::FileHashMap;
 
 /// KVLite Result Type
 pub type Result<T> = result::Result<T, Error>;
