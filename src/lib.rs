@@ -1,3 +1,42 @@
+//! A key-value store backed by your local file system.
+//!
+//! The underlying hashmap uses an inefficient hashing algorithm to
+//! place keys and values into large and unoptimized buckets that it
+//! reads/writes from a file.
+//!
+//! The file size is very large, and does not re-allocate memory.
+//! Also, the hashmap doesn't resize its keyspace. I may or may not
+//! fix these things.. this project was mostly just to learn Rust.
+//!
+//! Reads are something like 2k QPS, writes 500 QPS. It's thread- and
+//! process-safe (probably).
+//!
+//! ## Installation
+//!
+//! Add this to your `Cargo.toml`:
+//!
+//! ```toml
+//! [dependencies]
+//! kvlite = "0.1.2"
+//! ```
+//!
+//! ## Examples
+//!
+//!
+//! ```
+//! extern crate kvlite;
+//!
+//! use kvlite::FileHashMap;
+//!
+//! let kv = FileHashMap::new("myfile.kvlite");
+//!
+//! kv.insert("foo", "bar");
+//!
+//! let foo = kv.get("foo").unwrap();
+//!
+//! println!("foo: {}", foo);  // prints: "foo: bar"
+//! ```
+
 extern crate nix;
 
 pub mod hashmap;
