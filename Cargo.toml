@@ -1,6 +1,6 @@
 [package]
 name = "kvlite"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Tyler Julian <tjulian@uber.com>"]
 description = "key value store backed by local files"
 license = "MIT"
