@@ -30,7 +30,7 @@ impl FileHashMap {
         (total % key_count) as u64
     }
 
-    fn init_file_once(&self, key_count: u32) {
+    fn init_file_once(&self, key_count: u32) -> Result<()> {
         let path = Path::new(self.filename);
         let header = Header {
             version: 0,
@@ -38,18 +38,27 @@ impl FileHashMap {
             val_size: ITEM_SIZE,
             heap_size: 0,
         };
-        let file = OpenOptions::new().write(true).create_new(true).open(&path);
-        if let Ok(mut f) = file {
-            // write header
-            let buf = header.as_bytes();
-            f.write(&buf);
 
-            // write body
-            for _ in 0..header.key_count {
-                let buf = [0u8; ITEM_SIZE as usize];
-                f.write(&buf);
+        // try to create the file, return OK if it already exists
+        let mut file = match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Err(_) => return Ok(()),
+            Ok(f) => f,
+        };
+
+        // write header
+        let buf = header.as_bytes();
+        if let Err(_) = file.write(&buf) {
+            return Err(Error::IO);
+        }
+
+        // write body
+        for _ in 0..header.key_count {
+            let buf = [0u8; ITEM_SIZE as usize];
+            if let Err(_) = file.write(&buf) {
+                return Err(Error::IO);
             }
         }
+        Ok(())
     }
 
     /// removes the hashmap file for testing
@@ -104,7 +113,9 @@ impl FileHashMap {
     }
 
     pub fn get(&self, key: &str) -> Result<String> {
-        self.init_file_once(DEFAULT_KEY_COUNT);
+        if let Err(why) = self.init_file_once(DEFAULT_KEY_COUNT) {
+            return Err(why);
+        };
         let file = self.open_file();
         let header = match self.read_header(&file) {
             Ok(x) => x,
@@ -191,7 +202,9 @@ impl FileHashMap {
     }
 
     pub fn insert(&self, key: &str, val: &str) -> Result<()> {
-        self.init_file_once(DEFAULT_KEY_COUNT);
+        if let Err(why) = self.init_file_once(DEFAULT_KEY_COUNT) {
+            return Err(why);
+        };
         let file = self.open_file();
         let header = match self.read_header(&file) {
             Ok(x) => x,
@@ -235,7 +248,9 @@ impl FileHashMap {
     }
 
     pub fn remove(&self, key: &str) -> Result<()> {
-        self.init_file_once(DEFAULT_KEY_COUNT);
+        if let Err(why) = self.init_file_once(DEFAULT_KEY_COUNT) {
+            return Err(why);
+        };
         let file = self.open_file();
         let header = match self.read_header(&file) {
             Ok(x) => x,
@@ -281,7 +296,7 @@ fn test_filemap() {
     // create a file hashmap with 1 bucket to ensure collisions
     let fm = FileHashMap::new("test.kvlite");
     fm.delete_file();
-    fm.init_file_once(1);
+    fm.init_file_once(1).unwrap();
 
     // get nonexistent key
     let val = fm.get("foo");
