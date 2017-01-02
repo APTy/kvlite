@@ -45,14 +45,15 @@ impl FileHashMap {
             f.write(&buf);
 
             // write body
-            for i in 0..header.key_count {
+            for _ in 0..header.key_count {
                 let buf = [0u8; ITEM_SIZE as usize];
                 f.write(&buf);
             }
         }
     }
 
-    /// removes the hashmap file
+    /// removes the hashmap file for testing
+    #[allow(unused_must_use, dead_code)]
     fn delete_file(&self) {
         let path = Path::new(self.filename);
         remove_file(&path);

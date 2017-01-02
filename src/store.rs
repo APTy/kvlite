@@ -1,10 +1,4 @@
 use std::io;
-use std::io::prelude::*;
-use std::fs::OpenOptions;
-use std::path::Path;
-use std::error::Error;
-use std::collections::HashMap;
-use rustc_serialize::json;
 
 use hashmap::FileHashMap;
 

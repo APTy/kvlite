@@ -1,5 +1,4 @@
 extern crate nix;
-extern crate rustc_serialize;
 
 pub mod store;
 
