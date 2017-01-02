@@ -162,13 +162,19 @@ impl FileHashMap {
 
         // write new contents
         let s = FileHashMap::seek_from(pos);
-        file.seek(s);
+        if let Err(_) = file.seek(s) {
+            flock(fd, FlockArg::Unlock).unwrap();
+            return Err(Error::IO);
+        }
         let next = match prev_item.get_next() {
             Some(x) => x,
             None => 0,
         };
         let buf = new_item.with_next(next).as_bytes();
-        file.write(&buf);
+        if let Err(_) = file.write(&buf) {
+            flock(fd, FlockArg::Unlock).unwrap();
+            return Err(Error::IO);
+        }
 
         // release lock
         flock(fd, FlockArg::Unlock).unwrap();
@@ -188,9 +194,15 @@ impl FileHashMap {
         // calculate position of the new item and write it
         let new_pos = header.key_count + header.heap_size;
         let new_s = FileHashMap::seek_from(new_pos as u64);
-        file.seek(new_s);
+        if let Err(_) = file.seek(new_s) {
+            flock(fd, FlockArg::Unlock).unwrap();
+            return Err(Error::IO);
+        }
         let buf = new_item.as_bytes();
-        file.write(&buf);
+        if let Err(_) = file.write(&buf) {
+            flock(fd, FlockArg::Unlock).unwrap();
+            return Err(Error::IO);
+        }
 
         // read current contents and confirm nothing has changed
         let prev_item_confirm = match self.read_item(&file, prev_pos) {
@@ -204,14 +216,23 @@ impl FileHashMap {
 
         // update old item and write it
         let old_s = FileHashMap::seek_from(prev_pos);
-        file.seek(old_s);
+        if let Err(_) = file.seek(old_s) {
+            flock(fd, FlockArg::Unlock).unwrap();
+            return Err(Error::IO);
+        }
         let update_prev_item = prev_item.with_next(new_pos);
         let buf = update_prev_item.as_bytes();
-        file.write(&buf);
+        if let Err(_) = file.write(&buf) {
+            flock(fd, FlockArg::Unlock).unwrap();
+            return Err(Error::IO);
+        }
 
         // update header
         header.inc_heap();
-        self.write_header(&file, header);
+        if let Err(why) = self.write_header(&file, header) {
+            flock(fd, FlockArg::Unlock).unwrap();
+            return Err(why);
+        }
 
         // release lock
         flock(fd, FlockArg::Unlock).unwrap();
