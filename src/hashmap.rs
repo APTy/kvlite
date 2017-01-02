@@ -94,22 +94,30 @@ impl FileHashMap {
         Ok(Header::from(buf))
     }
 
-    fn write_header(&self, mut file: &File, header: Header) {
+    fn write_header(&self, mut file: &File, header: Header) -> Result<()> {
         let hdr_s = SeekFrom::Start(HEADER_POS);
-        file.seek(hdr_s);
+        if let Err(_) = file.seek(hdr_s) {
+            return Err(Error::IO);
+        }
 
         let buf = header.as_bytes();
-        file.write(&buf);
+        if let Err(_) = file.write(&buf) {
+            return Err(Error::IO);
+        }
+        Ok(())
     }
 
-    fn read_item(&self, mut file: &File, pos: u64) -> Item {
+    fn read_item(&self, mut file: &File, pos: u64) -> Result<Item> {
         let s = FileHashMap::seek_from(pos);
-        file.seek(s);
+        if let Err(_) = file.seek(s) {
+            return Err(Error::IO);
+        }
 
         let mut buf = [0u8; ITEM_SIZE as usize];
-        file.read(&mut buf);
-
-        Item::from(buf)
+        if let Err(_) = file.read(&mut buf) {
+            return Err(Error::IO);
+        }
+        Ok(Item::from(buf))
     }
 
     pub fn get(&self, key: &str) -> Result<String> {
@@ -123,7 +131,10 @@ impl FileHashMap {
         };
         let mut pos = FileHashMap::hash(key, header.key_count);
         loop {
-            let item = self.read_item(&file, pos);
+            let item = match self.read_item(&file, pos) {
+                Err(why) => return Err(why),
+                Ok(x) => x,
+            };
             if item.is_key(key) {
                 return Ok(item.get_val());
             }
@@ -140,7 +151,10 @@ impl FileHashMap {
         flock(fd, FlockArg::LockExclusive).unwrap();
 
         // read current contents and confirm nothing has changed
-        let prev_item_confirm = self.read_item(&file, pos);
+        let prev_item_confirm = match self.read_item(&file, pos) {
+            Err(why) => return Err(why),
+            Ok(x) => x,
+        };
         if prev_item_confirm != *prev_item {
             flock(fd, FlockArg::Unlock).unwrap();
             return Ok(false);
@@ -179,7 +193,10 @@ impl FileHashMap {
         file.write(&buf);
 
         // read current contents and confirm nothing has changed
-        let prev_item_confirm = self.read_item(&file, prev_pos);
+        let prev_item_confirm = match self.read_item(&file, prev_pos) {
+            Err(why) => return Err(why),
+            Ok(x) => x,
+        };
         if prev_item_confirm != *prev_item {
             flock(fd, FlockArg::Unlock).unwrap();
             return Ok(false);
@@ -214,7 +231,10 @@ impl FileHashMap {
         let new_item = Item::new(key, val);
 
         loop {
-            let item = self.read_item(&file, pos);
+            let item = match self.read_item(&file, pos) {
+                Err(why) => return Err(why),
+                Ok(x) => x,
+            };
 
             // write new item into static allocation
             if item.is_empty() {
@@ -260,7 +280,10 @@ impl FileHashMap {
         let new_item = Item::empty();
 
         loop {
-            let item = self.read_item(&file, pos);
+            let item = match self.read_item(&file, pos) {
+                Err(why) => return Err(why),
+                Ok(x) => x,
+            };
             if item.is_key(key) {
                 if let Ok(ok) = self.write_item(&file, pos, &item, &new_item) {
                     if !ok { continue; }
