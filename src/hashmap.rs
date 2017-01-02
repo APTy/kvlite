@@ -23,11 +23,11 @@ impl FileHashMap {
     }
 
     fn hash(s: &str, key_count: u32) -> u64 {
-        let mut total = 0;
+        let mut total: u32 = 0;
         for b in s.as_bytes() {
-            total += b.count_ones();
+            total = *b as u32 + (total << 6) + (total << 16) - total;
         }
-        (total % key_count as u32) as u64
+        (total % key_count) as u64
     }
 
     fn init_file_once(&self, key_count: u32) {
